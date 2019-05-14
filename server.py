@@ -3,13 +3,16 @@
 from socket import *
 from select import select
 import os, sys, time
+from multiprocessing import Value
 from settings import *
+from dbhelper import AIDHelper
 
 ADDR = ('127.0.0.1', 10086)
 
 # FTP服务器
 class FtpServer:
     def __init__(self):
+        self.db = AIDHelper()
         self.create_socket()
         self.bind_addr()
     
@@ -66,6 +69,8 @@ class FtpServer:
         # 登录请求
         if cmd == LOGIN:
             self.do_login(data, connfd)
+        elif cmd == LOGOUT:
+            self.do_logout(data, connfd)
         # 注册请求
         elif cmd == REG:
             self.do_reg(data, connfd)
@@ -85,17 +90,31 @@ class FtpServer:
     def do_login(self, cmd, connfd):
         username = cmd[1]
         pwd = cmd[2]
-        if username == '1' and pwd == '1':
+        res = self.db.usr_login(username, pwd)
+        if res:
             resp = SUCCESS + CMD_SPLIT
+            # 用户上线
+            if not self.db.is_usr_online(username):
+                self.db.usr_online(username, connfd.getpeername()[0])
         else:
             resp = FAILED + CMD_SPLIT + '用户账号，密码错误！'
         connfd.send(resp.encode())
     
+    # 登出请求
+    def do_logout(self, cmd, connfd):
+        username = cmd[1]
+        self.db.usr_offline(username)
+
     # 注册请求
     def do_reg(self, cmd, connfd):
         username = cmd[1]
         userpwd = cmd[2]
-        resp = CMD_SPLIT.join([SUCCESS, username, userpwd])
+        # 加入数据库
+        res = self.db.add_usr(username, userpwd)
+        if res:
+            resp = CMD_SPLIT.join([SUCCESS, username, userpwd])
+        else:
+            resp = FAILED
         connfd.send(resp.encode())
 
     # 获取文件列表
