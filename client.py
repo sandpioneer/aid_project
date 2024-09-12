@@ -8,30 +8,36 @@ ADDR = SERVER_ADDR
 # FTP客户端
 class FtpClient:
     def __init__(self):
-        self.create_sockfd()
-        self.connect_server()
-    
-    # 创建套接字
-    def create_sockfd(self):
-        self.sockfd = socket()
+        self.sockfd = None
 
     # 连接服务器
     def connect_server(self):
         # 准备连接服务器
         try:
+            # 创建套接字
+            self.sockfd = socket()
             self.sockfd.connect(ADDR)
+            return True
         except Exception as e:
             # 无法连接服务器，直接退出
             self.sockfd.close()
-            sys.exit('【服务器无法连接】' + str(e))
+            print('client connect server error..', e)
+            return False
 
     # 启动服务
     def run(self, cmd=None):
         # 未传递命令，退出
         if cmd is None:
-            return
+            return False
+        # 连接服务器
+        if not self.connect_server():
+            return False
         # 解析命令，此时的命令是用户输入的命令
-        self.analyzing(cmd)
+        res = self.analyzing(cmd)
+        # 关闭连接
+        self.end()
+        # 返回结果
+        return res
     
     # 关闭
     def end(self):
@@ -47,7 +53,7 @@ class FtpClient:
         rest = CMD_SPLIT.join(res[1:])
         cmd += rest
         # 转换成约定格式命令
-        self.handle(cmd)
+        return self.handle(cmd)
 
     # 处理请求
     def handle(self, command):
@@ -58,24 +64,26 @@ class FtpClient:
         # 不同类型不同处理
         # 登录
         if cmd_type == LOGIN:
-            self.do_login(command)
+            return self.do_login(command)
+        elif cmd_type == LOGOUT:
+            return self.do_logout(command)
         # 注册
         elif cmd_type == REG:
-            self.do_reg(command)
+            return self.do_reg(command)
         # 获取文件列表
         elif cmd_type ==LIST:
-            self.do_list(command)
+            return self.do_list(command)
         # 下载文件
         elif cmd_type == DOWN:
-            self.do_down(command)
+            return self.do_down(command)
         elif cmd_type == UPLOAD:
-            self.do_load(command)
+            return self.do_load(command)
         # 忽略
         elif cmd_type == IGNORE:
-            self.do_ignore(cmd)
+            return self.do_ignore(cmd)
         # 其他
         else:
-            self.do_ignore(cmd)
+            return self.do_ignore(cmd)
     
     # 处理登录请求
     def do_login(self, cmd):
@@ -86,9 +94,15 @@ class FtpClient:
         resp = resp.split(CMD_SPLIT)
         if resp[0] == SUCCESS:
             print('登录成功！')
+            return True
         else:
             print('登录失败！')
+            return False
     
+    # 登出请求
+    def do_logout(self, cmd):
+        self.sockfd.send(cmd.encode())
+
     # 注册请求
     def do_reg(self, cmd):
         # 发送命令
@@ -98,8 +112,10 @@ class FtpClient:
         resp = resp.split(CMD_SPLIT)
         if resp[0] == SUCCESS:
             print('注册成功！')
+            return True
         else:
             print('注册失败！')
+            return False
 
     # 请求文件列表
     def do_list(self, cmd):
@@ -110,10 +126,11 @@ class FtpClient:
         resp = resp.split(CMD_SPLIT)
         if resp[0] != SUCCESS:
             print('获取文件列表失败')
-            return
-        # 打印出列表
-        for i in range(1, len(resp)):
-            print(resp[i])
+            return []
+        # # 打印出列表
+        # for i in range(1, len(resp)):
+        #     print(resp[i])
+        return resp[1:]
     
     # 下载文件
     def do_down(self, cmd):
@@ -124,7 +141,7 @@ class FtpClient:
         resp = resp.split(CMD_SPLIT)
         if resp[0] != SUCCESS:
             print('服务器不允许下载该文件')
-            return
+            return False
         # 文件名
         filename = resp[1].split('\\')[-1]
         # 文件大小
@@ -151,38 +168,45 @@ class FtpClient:
                 f.write(bs)
         except Exception as e:
             print('文件保存出错了！', e)
+            return False
         else:
             print('[%s]文件下载完成！' % filename)
+            return True
 
 
     # 上传文件
     def do_load(self, cmd):
+        # 只提取文件名
+        cmd_array = cmd.split(CMD_SPLIT)
+        filename = cmd_array[1]
+        name = filename.split('/')[-1]
+        # 重新组织命令
+        command = UPLOAD + CMD_SPLIT + name
         # 发送命令
-        self.sockfd.send(cmd.encode())
+        self.sockfd.send(command.encode())
         # 接收响应
         resp = self.sockfd.recv(MAX_TRANSFER_BLOCK).decode()
         resp = resp.split(CMD_SPLIT)
         if resp[0] != SUCCESS:
             print('服务器不允许上传该文件')
-            return
+            return False
         
-        filename = resp[1]
         # 读取文件
         try:
-            f = open(DOWNLOAD + filename, 'rb')
+            f = open(filename, 'rb')
         except Exception as e:
             print('文件打开失败...', e)
             self.sockfd.send(CMD_SPLIT.join([FAILED, filename, '0']).encode())
-            return
+            return False
         # 确定可以上传
         # 文件大小
-        filesize = os.path.getsize(DOWNLOAD + filename)
+        filesize = os.path.getsize(filename)
         # 发送文件名称，文件大小
         self.sockfd.send(CMD_SPLIT.join([SUCCESS, filename, str(filesize)]).encode())
         # 文件大小为0则不再继续发送
         if filesize <= 0:
             print('文件大小为0，不予发送。')
-            return
+            return False
         # 已发送大小
         done = 0
         # 百分比
@@ -195,7 +219,7 @@ class FtpClient:
             if not data:
                 self.sockfd.send(FILE_END_TAG.encode())
                 print('[%s]全部上传完毕！' % filename)
-                break
+                return True
             self.sockfd.send(data)
             done += len(data)
             percent = round(done / filesize, 4) * 100
@@ -208,6 +232,7 @@ class FtpClient:
     def do_ignore(self, cmd):
         print('命令未识别:', end='')
         print(cmd)
+        return False
 
 if __name__ == '__main__':
     c = FtpClient()

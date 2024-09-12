@@ -87,7 +87,7 @@ class AIDHelper:
     # 新用户注册
     def add_usr(self, username, userpwd):
         sql = "insert into usr values(0,'%s','%s')" % (username, userpwd)
-        return self.helper.do_query(sql)
+        return self.do_update(sql)
     
     # 用户名是否存在
     def is_exist_username(self, username):
@@ -96,7 +96,7 @@ class AIDHelper:
     
     # 用户登录
     def usr_login(self, username, userpwd):
-        sql = "select uid from usr where username = '%s' userpwd = '%s'" % (username, userpwd)
+        sql = "select uid from usr where username = '%s' and userpwd = '%s'" % (username, userpwd)
         return len(self.do_query(sql)) >= 1
     
     # 用户上线
@@ -118,3 +118,31 @@ class AIDHelper:
     def usr_online_list(self):
         sql = 'select * from usr_online'
         return self.do_query(sql)
+
+if __name__ == '__main__':
+    aid = AIDHelper()
+    # sql = "insert into usr values(0,'admin','admin')"
+    # print(aid.is_exist_username('1234')) 
+    print(aid.usr_online('金毛狮王', '127.0.0.1')) 
+    # print(aid.usr_login('admin', 'admin')) 
+    # print(aid.usr_offline('123'))
+    # print(aid.is_usr_online('admin'))
+
+
+# 创建数据库
+# create database aid default charset=utf8;
+
+# 创建用户表
+# create table usr(
+#     uid int primary key auto_increment,
+#     username varchar(128) unique,
+#     userpwd varchar(128)
+# )default charset=utf8;
+
+# 创建用户在线表
+# create table usr_online(
+#     id int primary key auto_increment,
+#     username varchar(128),
+#     ip varchar(128),
+#     time datetime
+# )ENGINE=MEMORY default charset=utf8;
